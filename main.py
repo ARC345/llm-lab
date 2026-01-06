@@ -7,9 +7,7 @@ class settings:
     batch_size = 4
     torch_seed = 1337
     
-    train_frac = 0.8
-    val_frac = 0.1
-    test_frac = 1.0 - (train_frac + val_frac)
+    train_test_split = 0.8
 
 with open('data/tinyshakespeare.txt', 'r', encoding='utf-8') as f:
     text = f.read()
@@ -27,13 +25,9 @@ data = torch.tensor(encode(text), dtype=torch.long)
 print("tensot->data\n  shape:", data.shape)
 print("  type:", data.dtype)
     
-# 80% train, 10% val, 10% test
-train_end = int(settings.train_frac * len(data))
-val_end = int((settings.train_frac + settings.val_frac) * len(data))
-train_data = data[:train_end]
-val_data = data[train_end:val_end]
-test_data = data[val_end:]
-train_data[:settings.block_size+1]
+n = int(settings.train_test_split * len(data))
+train_data = data[:n]
+val_data = data[n:]
 
 x = train_data[:settings.block_size]
 y = train_data[1:settings.block_size+1]
