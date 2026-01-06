@@ -1,0 +1,31 @@
+[
+  {
+    "run_id": "20260106_211415",
+    "started_at": "2026-01-06T21:14:15.672893",
+    "completed_at": "2026-01-06T21:16:18.735554",
+    "hyperparameters": {
+      "block_size": 8,
+      "batch_size": 4,
+      "train_test_split": 0.9,
+      "torch_seed": 1337,
+      "max_iters": 5000,
+      "eval_interval": 100,
+      "learning_rate": 0.001,
+      "eval_iters": 200,
+      "n_embd": 64,
+      "n_head": 4,
+      "n_layer": 4,
+      "dropout": 0.0,
+      "device": "cuda",
+      "vocab_size": 65
+    },
+    "final_metrics": {
+      "final_train_loss": 2.02951979637146,
+      "final_val_loss": 2.0755646228790283,
+      "best_val_loss": 2.0626020431518555,
+      "best_val_iter": 4999,
+      "total_iters": 5000,
+      "num_params_M": 0.21
+    }
+  }
+]

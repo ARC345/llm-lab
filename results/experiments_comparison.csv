@@ -1,0 +1,2 @@
+run_id,started_at,learning_rate,n_embd,n_head,n_layer,dropout,batch_size,block_size,max_iters,final_train_loss,final_val_loss,best_val_loss,best_val_iter,num_params_M
+20260106_211415,2026-01-06T21:14:15.672893,0.001,64,4,4,0.0,4,8,5000,2.02951979637146,2.0755646228790283,2.0626020431518555,4999,0.21

@@ -1,3 +1,8 @@
+import os
+import csv
+import json
+from datetime import datetime
+
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
@@ -196,12 +201,61 @@ print(sum(p.numel() for p in model.parameters())/1e6, 'M parameters')
 # create a PyTorch optimizer
 optimizer = torch.optim.AdamW(model.parameters(), lr=settings.learning_rate)
 
+# ============================================================================
+# Experiment Tracking System
+# ============================================================================
+results_dir = 'results'
+os.makedirs(results_dir, exist_ok=True)
+
+# Create unique run ID based on timestamp
+run_id = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+run_dir = os.path.join(results_dir, f'run_{run_id}')
+os.makedirs(run_dir, exist_ok=True)
+
+# Snapshot all hyperparameters
+current_hparams = {
+    'block_size': settings.block_size,
+    'batch_size': settings.batch_size,
+    'train_test_split': settings.train_test_split,
+    'torch_seed': settings.torch_seed,
+    'max_iters': settings.max_iters,
+    'eval_interval': settings.eval_interval,
+    'learning_rate': settings.learning_rate,
+    'eval_iters': settings.eval_iters,
+    'n_embd': settings.n_embd,
+    'n_head': settings.n_head,
+    'n_layer': settings.n_layer,
+    'dropout': settings.dropout,
+    'device': settings.device,
+    'vocab_size': vocab_size,
+    'run_id': run_id,
+    'started_at': datetime.utcnow().isoformat(),
+}
+
+# Save hyperparameters for this run
+hyperparams_path = os.path.join(run_dir, 'hyperparams.json')
+try:
+    with open(hyperparams_path, 'w', encoding='utf-8') as f:
+        json.dump(current_hparams, f, indent=2)
+    print(f"Experiment tracking initialized: run_{run_id}")
+except Exception as e:
+    print(f'Warning: failed to write hyperparams: {e}')
+
+# Track best validation loss
+best_val_loss = float('inf')
+best_val_iter = 0
+
 for iter in range(settings.max_iters):
 
     # every once in a while evaluate the loss on train and val sets
     if iter % settings.eval_interval == 0 or iter == settings.max_iters - 1:
         losses = estimate_loss()
         print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+        
+        # Track best validation loss
+        if losses['val'] < best_val_loss:
+            best_val_loss = losses['val']
+            best_val_iter = iter
 
     # sample a batch of data
     xb, yb = get_batch('train')
@@ -212,53 +266,106 @@ for iter in range(settings.max_iters):
     loss.backward()
     optimizer.step()
 
-# generate from the model
+# Generate from the model
 context = torch.zeros((1, 1), dtype=torch.long, device=settings.device)
-print(decode(model.generate(context, max_new_tokens=2000)[0].tolist()))
+generated = decode(model.generate(context, max_new_tokens=2000)[0].tolist())
+print(generated)
 
+# Save generated output
+try:
+    gen_path = os.path.join(run_dir, 'generated_text.txt')
+    with open(gen_path, 'w', encoding='utf-8') as f:
+        f.write(f"# Generated on {datetime.utcnow().isoformat()}\n")
+        f.write(f"# Run ID: {run_id}\n\n")
+        f.write(generated)
+except Exception as e:
+    print('Warning: failed to save generated output:', e)
 
-class BigramLanguageModel(nn.Module):
+# ============================================================================
+# Save Final Experiment Summary
+# ============================================================================
+final_losses = estimate_loss()
+experiment_summary = {
+    'run_id': run_id,
+    'started_at': current_hparams['started_at'],
+    'completed_at': datetime.utcnow().isoformat(),
+    'hyperparameters': {k: v for k, v in current_hparams.items() if k not in ['run_id', 'started_at']},
+    'final_metrics': {
+        'final_train_loss': float(final_losses['train']),
+        'final_val_loss': float(final_losses['val']),
+        'best_val_loss': float(best_val_loss),
+        'best_val_iter': best_val_iter,
+        'total_iters': settings.max_iters,
+        'num_params_M': round(sum(p.numel() for p in model.parameters()) / 1e6, 2),
+    },
+}
 
-    def __init__(self, vocab_size):
-        super().__init__()
-        # each token directly reads off the logits for the next token from a lookup table
-        self.token_embedding_table = nn.Embedding(vocab_size, vocab_size)
+# Save experiment summary for this run
+summary_path = os.path.join(run_dir, 'experiment_summary.json')
+try:
+    with open(summary_path, 'w', encoding='utf-8') as f:
+        json.dump(experiment_summary, f, indent=2)
+except Exception as e:
+    print(f'Warning: failed to write experiment summary: {e}')
 
-    def forward(self, idx, targets=None):
+# Update master summary file (all experiments)
+master_summary_path = os.path.join(results_dir, 'all_experiments_summary.json')
+all_experiments = []
+if os.path.exists(master_summary_path):
+    try:
+        with open(master_summary_path, 'r', encoding='utf-8') as f:
+            all_experiments = json.load(f)
+    except Exception:
+        all_experiments = []
 
-        # idx and targets are both (B,T) tensor of integers
-        logits = self.token_embedding_table(idx) # (B,T,C)
+# Add this experiment to the list
+all_experiments.append(experiment_summary)
 
-        if targets is None:
-            loss = None
-        else:
-            B, T, C = logits.shape
-            logits = logits.view(B*T, C)
-            targets = targets.view(B*T)
-            loss = F.cross_entropy(logits, targets)
+# Save updated master summary
+try:
+    with open(master_summary_path, 'w', encoding='utf-8') as f:
+        json.dump(all_experiments, f, indent=2)
+    print(f"\n✓ Experiment saved: run_{run_id}")
+    print(f"  Final train loss: {final_losses['train']:.4f}")
+    print(f"  Final val loss: {final_losses['val']:.4f}")
+    print(f"  Best val loss: {best_val_loss:.4f} (at iter {best_val_iter})")
+    print(f"  Results directory: {run_dir}")
+    print(f"  Master summary: {master_summary_path}")
+except Exception as e:
+    print(f'Warning: failed to update master summary: {e}')
 
-        return logits, loss
-
-    def generate(self, idx, max_new_tokens):
-        # idx is (B, T) array of indices in the current context
-        for _ in range(max_new_tokens):
-            # get the predictions
-            logits, loss = self(idx)
-            # focus only on the last time step
-            logits = logits[:, -1, :] # becomes (B, C)
-            # apply softmax to get probabilities
-            probs = F.softmax(logits, dim=-1) # (B, C)
-            # sample from the distribution
-            idx_next = torch.multinomial(probs, num_samples=1) # (B, 1)
-            # append sampled index to the running sequence
-            idx = torch.cat((idx, idx_next), dim=1) # (B, T+1)
-        return idx
-
-m = BigramLanguageModel(vocab_size).to(settings.device)
-logits, loss = m(xb, yb)
-print(logits.shape)
-print(loss)
-
-print(decode(m.generate(idx = torch.zeros((1, 1), dtype=torch.long, device=settings.device), max_new_tokens=100)[0].tolist()))
-
-optimizer = torch.optim.AdamW(m.parameters(), lr=settings.learning_rate)
+# Create a human-readable comparison CSV
+comparison_csv_path = os.path.join(results_dir, 'experiments_comparison.csv')
+try:
+    # Extract key metrics for comparison
+    comparison_data = []
+    for exp in all_experiments:
+        row = {
+            'run_id': exp['run_id'],
+            'started_at': exp['started_at'],
+            'learning_rate': exp['hyperparameters']['learning_rate'],
+            'n_embd': exp['hyperparameters']['n_embd'],
+            'n_head': exp['hyperparameters']['n_head'],
+            'n_layer': exp['hyperparameters']['n_layer'],
+            'dropout': exp['hyperparameters']['dropout'],
+            'batch_size': exp['hyperparameters']['batch_size'],
+            'block_size': exp['hyperparameters']['block_size'],
+            'max_iters': exp['hyperparameters']['max_iters'],
+            'final_train_loss': exp['final_metrics']['final_train_loss'],
+            'final_val_loss': exp['final_metrics']['final_val_loss'],
+            'best_val_loss': exp['final_metrics']['best_val_loss'],
+            'best_val_iter': exp['final_metrics']['best_val_iter'],
+            'num_params_M': exp['final_metrics']['num_params_M'],
+        }
+        comparison_data.append(row)
+    
+    # Write CSV
+    if comparison_data:
+        fieldnames = list(comparison_data[0].keys())
+        with open(comparison_csv_path, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(comparison_data)
+        print(f"  Comparison CSV: {comparison_csv_path}")
+except Exception as e:
+    print(f'Warning: failed to create comparison CSV: {e}')
