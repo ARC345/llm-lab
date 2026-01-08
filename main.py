@@ -1,7 +1,7 @@
 import os
 import csv
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 import torch
 import torch.nn as nn
@@ -50,7 +50,7 @@ y = train_data[1:settings.block_size+1]
 # generate a small batch of data of inputs x and targets y
 def get_batch(split):
     data = train_data if split == 'train' else val_data
-    ix = torch.randint(len(data) - settings.block_size, (settings.block_size,))
+    ix = torch.randint(len(data) - settings.block_size, (settings.batch_size,))
     x = torch.stack([data[i:i+settings.block_size] for i in ix])
     y = torch.stack([data[i+1:i+settings.block_size+1] for i in ix])
     x, y = x.to(settings.device), y.to(settings.device)
@@ -201,49 +201,7 @@ print(sum(p.numel() for p in model.parameters())/1e6, 'M parameters')
 # create a PyTorch optimizer
 optimizer = torch.optim.AdamW(model.parameters(), lr=settings.learning_rate)
 
-# ============================================================================
-# Experiment Tracking System
-# ============================================================================
-results_dir = 'results'
-os.makedirs(results_dir, exist_ok=True)
-
-# Create unique run ID based on timestamp
-run_id = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-run_dir = os.path.join(results_dir, f'run_{run_id}')
-os.makedirs(run_dir, exist_ok=True)
-
-# Snapshot all hyperparameters
-current_hparams = {
-    'block_size': settings.block_size,
-    'batch_size': settings.batch_size,
-    'train_test_split': settings.train_test_split,
-    'torch_seed': settings.torch_seed,
-    'max_iters': settings.max_iters,
-    'eval_interval': settings.eval_interval,
-    'learning_rate': settings.learning_rate,
-    'eval_iters': settings.eval_iters,
-    'n_embd': settings.n_embd,
-    'n_head': settings.n_head,
-    'n_layer': settings.n_layer,
-    'dropout': settings.dropout,
-    'device': settings.device,
-    'vocab_size': vocab_size,
-    'run_id': run_id,
-    'started_at': datetime.utcnow().isoformat(),
-}
-
-# Save hyperparameters for this run
-hyperparams_path = os.path.join(run_dir, 'hyperparams.json')
-try:
-    with open(hyperparams_path, 'w', encoding='utf-8') as f:
-        json.dump(current_hparams, f, indent=2)
-    print(f"Experiment tracking initialized: run_{run_id}")
-except Exception as e:
-    print(f'Warning: failed to write hyperparams: {e}')
-
-# Track best validation loss
 best_val_loss = float('inf')
-best_val_iter = 0
 
 for iter in range(settings.max_iters):
 
@@ -251,11 +209,8 @@ for iter in range(settings.max_iters):
     if iter % settings.eval_interval == 0 or iter == settings.max_iters - 1:
         losses = estimate_loss()
         print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
-        
-        # Track best validation loss
         if losses['val'] < best_val_loss:
             best_val_loss = losses['val']
-            best_val_iter = iter
 
     # sample a batch of data
     xb, yb = get_batch('train')
@@ -266,107 +221,22 @@ for iter in range(settings.max_iters):
     loss.backward()
     optimizer.step()
 
-# Generate from the model
-context = torch.zeros((1, 1), dtype=torch.long, device=settings.device)
-generated = decode(model.generate(context, max_new_tokens=2000)[0].tolist())
-print(generated)
-
-# Save generated output
-try:
-    gen_path = os.path.join(run_dir, 'generated_text.txt')
-    with open(gen_path, 'w', encoding='utf-8') as f:
-        f.write(f"# Generated on {datetime.utcnow().isoformat()}\n")
-        f.write(f"# Run ID: {run_id}\n\n")
-        f.write(generated)
-except Exception as e:
-    print('Warning: failed to save generated output:', e)
-
-
 # ============================================================================
-# Save Final Experiment Summary
+# Experiment Tracking System
 # ============================================================================
-final_losses = estimate_loss()
-experiment_summary = {
-    'run_id': run_id,
-    'started_at': current_hparams['started_at'],
-    'completed_at': datetime.utcnow().isoformat(),
-    'hyperparameters': {k: v for k, v in current_hparams.items() if k not in ['run_id', 'started_at']},
-    'final_metrics': {
-        'final_train_loss': float(final_losses['train']),
-        'final_val_loss': float(final_losses['val']),
-        'best_val_loss': float(best_val_loss),
-        'best_val_iter': best_val_iter,
-        'total_iters': settings.max_iters,
-        'num_params_M': round(sum(p.numel() for p in model.parameters()) / 1e6, 2),
-    },
+run_id = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
+
+run_dir = f'results/run_{run_id}'
+os.makedirs(run_dir, exist_ok=True)
+gen_text = decode(model.generate(torch.zeros((1, 1), dtype=torch.long, device=settings.device), 500)[0].tolist())
+
+summary = {
+    "run_id": run_id,
+    "params": sum(p.numel() for p in model.parameters()),
+    "best_val_loss": float(best_val_loss),
+    "config": {k: v for k, v in vars(settings).items() if not k.startswith('__')}
 }
 
-# Save experiment summary for this run
-summary_path = os.path.join(run_dir, 'experiment_summary.json')
-try:
-    with open(summary_path, 'w', encoding='utf-8') as f:
-        json.dump(experiment_summary, f, indent=2)
-except Exception as e:
-    print(f'Warning: failed to write experiment summary: {e}')
-
-# Update master summary file (all experiments)
-master_summary_path = os.path.join(results_dir, 'all_experiments_summary.json')
-all_experiments = []
-if os.path.exists(master_summary_path):
-    try:
-        with open(master_summary_path, 'r', encoding='utf-8') as f:
-            all_experiments = json.load(f)
-    except Exception:
-        all_experiments = []
-
-# Add this experiment to the list
-all_experiments.append(experiment_summary)
-
-# Save updated master summary
-try:
-    with open(master_summary_path, 'w', encoding='utf-8') as f:
-        json.dump(all_experiments, f, indent=2)
-    print(f"\n✓ Experiment saved: run_{run_id}")
-    print(f"  Final train loss: {final_losses['train']:.4f}")
-    print(f"  Final val loss: {final_losses['val']:.4f}")
-    print(f"  Best val loss: {best_val_loss:.4f} (at iter {best_val_iter})")
-    print(f"  Results directory: {run_dir}")
-    print(f"  Master summary: {master_summary_path}")
-except Exception as e:
-    print(f'Warning: failed to update master summary: {e}')
-
-# Create a human-readable comparison CSV
-comparison_csv_path = os.path.join(results_dir, 'experiments_comparison.csv')
-try:
-    # Extract key metrics for comparison
-    comparison_data = []
-    for exp in all_experiments:
-        row = {
-            'run_id': exp['run_id'],
-            'started_at': exp['started_at'],
-            'learning_rate': exp['hyperparameters']['learning_rate'],
-            'n_embd': exp['hyperparameters']['n_embd'],
-            'n_head': exp['hyperparameters']['n_head'],
-            'n_layer': exp['hyperparameters']['n_layer'],
-            'dropout': exp['hyperparameters']['dropout'],
-            'batch_size': exp['hyperparameters']['batch_size'],
-            'block_size': exp['hyperparameters']['block_size'],
-            'max_iters': exp['hyperparameters']['max_iters'],
-            'final_train_loss': exp['final_metrics']['final_train_loss'],
-            'final_val_loss': exp['final_metrics']['final_val_loss'],
-            'best_val_loss': exp['final_metrics']['best_val_loss'],
-            'best_val_iter': exp['final_metrics']['best_val_iter'],
-            'num_params_M': exp['final_metrics']['num_params_M'],
-        }
-        comparison_data.append(row)
-    
-    # Write CSV
-    if comparison_data:
-        fieldnames = list(comparison_data[0].keys())
-        with open(comparison_csv_path, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(comparison_data)
-        print(f"  Comparison CSV: {comparison_csv_path}")
-except Exception as e:
-    print(f'Warning: failed to create comparison CSV: {e}')
+with open(f"{run_dir}/summary.json", 'w') as f: json.dump(summary, f, indent=2)
+with open(f"{run_dir}/generated.txt", 'w') as f: f.write(gen_text)
+print(f"\nRun {run_id} complete. Best Loss: {best_val_loss:.4f}")
