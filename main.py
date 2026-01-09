@@ -7,6 +7,20 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
+from clearml import Task
+import argparse
+
+# Parse arguments first
+parser = argparse.ArgumentParser()
+parser.add_argument('--comment', type=str, default='', help='Comment/Description for this run')
+args = parser.parse_args()
+
+task = Task.init(project_name="gpt-from-scratch", task_name="train_run")
+if args.comment:
+    task.set_comment(args.comment)
+else:
+    raise ValueError("A comment is required for this run. Please provide one using --comment.")
+
 class settings:
     block_size = 8
     batch_size = 4
@@ -21,7 +35,7 @@ class settings:
     n_head = 4
     n_layer = 4
     dropout = 0.0
-    comment = "changed ReLU to GELU"
+
         
 with open('data/tinyshakespeare.txt', 'r', encoding='utf-8') as f:
     text = f.read()
@@ -120,7 +134,7 @@ class FeedFoward(nn.Module):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(settings.n_embd, 4 * settings.n_embd),
-            nn.GELU(),
+            nn.ReLU(),
             nn.Linear(4 * settings.n_embd, settings.n_embd),
             nn.Dropout(settings.dropout),
         )
@@ -210,6 +224,12 @@ for iter in range(settings.max_iters):
     if iter % settings.eval_interval == 0 or iter == settings.max_iters - 1:
         losses = estimate_loss()
         print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+        
+        # Explicitly log to ClearML
+        if task: 
+            task.get_logger().report_scalar(title='Loss', series='train', value=losses['train'], iteration=iter)
+            task.get_logger().report_scalar(title='Loss', series='val', value=losses['val'], iteration=iter)
+
         if losses['val'] < best_val_loss:
             best_val_loss = losses['val']
 
@@ -223,21 +243,20 @@ for iter in range(settings.max_iters):
     optimizer.step()
 
 # ============================================================================
-# Experiment Tracking System
+# ClearML Logging
 # ============================================================================
-run_id = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
+task.connect(settings) # Ensure settings are logged as configuration
 
-run_dir = f'results/run_{run_id}'
-os.makedirs(run_dir, exist_ok=True)
-gen_text = decode(model.generate(torch.zeros((1, 1), dtype=torch.long, device=settings.device), 500)[0].tolist())
+# Log model parameters
+n_params = sum(p.numel() for p in model.parameters())
+print(f"{n_params/1e6:.2f} M parameters")
+task.set_parameter("model_parameters", n_params)
 
-summary = {
-    "run_id": run_id,
-    "params": sum(p.numel() for p in model.parameters()),
-    "best_val_loss": float(best_val_loss),
-    "config": {k: v for k, v in vars(settings).items() if not k.startswith('__')}
-}
+# Generate text
+context = torch.zeros((1, 1), dtype=torch.long, device=settings.device)
+gen_text = decode(model.generate(context, max_new_tokens=500)[0].tolist())
 
-with open(f"{run_dir}/summary.json", 'w') as f: json.dump(summary, f, indent=2)
-with open(f"{run_dir}/generated.txt", 'w') as f: f.write(gen_text)
-print(f"\nRun {run_id} complete. Best Loss: {best_val_loss:.4f}")
+print("\nGenerated Text:\n", gen_text)
+task.get_logger().report_text("Generated Sample", gen_text)
+
+print(f"\nRun complete. Best Loss: {best_val_loss:.4f}")
