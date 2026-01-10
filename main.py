@@ -13,28 +13,50 @@ import argparse
 # Parse arguments first
 parser = argparse.ArgumentParser()
 parser.add_argument('--comment', type=str, default='', help='Comment/Description for this run')
+parser.add_argument('--profile', action='store_true', help='Enable profiling')
+parser.add_argument('--block_size', type=int, default=128, help='Block size / context length')
+parser.add_argument('--batch_size', type=int, default=32, help='Batch size')
+parser.add_argument('--train_test_split', type=float, default=0.9, help='Train/Test split ratio')
+parser.add_argument('--torch_seed', type=int, default=1337, help='Random seed')
+parser.add_argument('--max_iters', type=int, default=5000, help='Maximum training iterations')
+parser.add_argument('--eval_interval', type=int, default=100, help='Evaluation interval')
+parser.add_argument('--learning_rate', type=float, default=3e-4, help='Learning rate')
+parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu', help='Device (cuda/cpu)')
+parser.add_argument('--eval_iters', type=int, default=20, help='Evaluation iterations')
+parser.add_argument('--n_embd', type=int, default=384, help='Embedding dimension')
+parser.add_argument('--n_head', type=int, default=6, help='Number of attention heads')
+parser.add_argument('--n_layer', type=int, default=6, help='Number of transformer layers')
+parser.add_argument('--dropout', type=float, default=0.2, help='Dropout rate')
 args = parser.parse_args()
 
 task = Task.init(project_name="gpt-from-scratch", task_name="train_run", reuse_last_task_id=False)
+
 if args.comment:
     task.set_comment(args.comment)
 else:
     raise ValueError("A comment is required for this run. Please provide one using --comment.")
 
+if args.profile:
+    import cProfile
+    import pstats
+    print("Profiling enabled...")
+    profiler = cProfile.Profile()
+    profiler.enable()
+
 class settings:
-    block_size = 8
-    batch_size = 4
-    train_test_split = 0.9
-    torch_seed = 1337
-    max_iters = 5000
-    eval_interval = 100
-    learning_rate = 1e-3
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    eval_iters = 200
-    n_embd = 64
-    n_head = 4
-    n_layer = 4
-    dropout = 0.0
+    block_size = args.block_size
+    batch_size = args.batch_size
+    train_test_split = args.train_test_split
+    torch_seed = args.torch_seed
+    max_iters = args.max_iters
+    eval_interval = args.eval_interval
+    learning_rate = args.learning_rate
+    device = args.device
+    eval_iters = args.eval_iters
+    n_embd = args.n_embd
+    n_head = args.n_head
+    n_layer = args.n_layer
+    dropout = args.dropout
 
         
 with open('data/tinyshakespeare.txt', 'r', encoding='utf-8') as f:
@@ -73,7 +95,7 @@ def get_batch(split):
 xb, yb = get_batch('train')
 
 @torch.no_grad()
-def estimate_loss():
+def estimate_loss(model):
     out = {}
     model.eval()
     for split in ['train', 'val']:
@@ -102,14 +124,10 @@ class Head(nn.Module):
         B,T,C = x.shape
         k = self.key(x)   # (B,T,C)
         q = self.query(x) # (B,T,C)
-        # compute attention scores ("affinities")
-        wei = q @ k.transpose(-2,-1) * C**-0.5 # (B, T, C) @ (B, C, T) -> (B, T, T)
-        wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf')) # (B, T, T)
-        wei = F.softmax(wei, dim=-1) # (B, T, T)
-        wei = self.dropout(wei)
-        # perform the weighted aggregation of the values
         v = self.value(x) # (B,T,C)
-        out = wei @ v # (B, T, T) @ (B, T, C) -> (B, T, C)
+        
+        # optimized attention (Flash Attention)
+        out = F.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=settings.dropout if self.training else 0, is_causal=True)
         return out
 
 class MultiHeadAttention(nn.Module):
@@ -170,6 +188,16 @@ class BigramLanguageModel(nn.Module):
         self.ln_f = nn.LayerNorm(settings.n_embd) # final layer norm
         self.lm_head = nn.Linear(settings.n_embd, vocab_size)
 
+        self.apply(self._init_weights)
+
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+
     def forward(self, idx, targets=None):
         B, T = idx.shape
 
@@ -208,59 +236,79 @@ class BigramLanguageModel(nn.Module):
             idx = torch.cat((idx, idx_next), dim=1) # (B, T+1)
         return idx
 
-model = BigramLanguageModel().to(settings.device)
-# print the number of parameters in the model
-print(sum(p.numel() for p in model.parameters())/1e6, 'M parameters')
+        return idx
 
-# create a PyTorch optimizer
-optimizer = torch.optim.AdamW(model.parameters(), lr=settings.learning_rate)
+def train():
+    model = BigramLanguageModel().to(settings.device)
+    # print the number of parameters in the model
+    print(sum(p.numel() for p in model.parameters())/1e6, 'M parameters')
 
-best_val_loss = float('inf')
+    # create a PyTorch optimizer
+    optimizer = torch.optim.AdamW(model.parameters(), lr=settings.learning_rate)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=settings.max_iters)
 
-for iter in range(settings.max_iters):
+    best_val_loss = float('inf')
 
-    # every once in a while evaluate the loss on train and val sets
-    if iter % settings.eval_interval == 0 or iter == settings.max_iters - 1:
-        losses = estimate_loss()
-        print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+    for iter in range(settings.max_iters):
+
+        # every once in a while evaluate the loss on train and val sets
+        if iter % settings.eval_interval == 0 or iter == settings.max_iters - 1:
+            losses = estimate_loss(model)
+            print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+            
+            # Explicitly log to ClearML
+            if task: 
+                task.get_logger().report_scalar(title='Loss', series='train', value=losses['train'], iteration=iter)
+                task.get_logger().report_scalar(title='Loss', series='val', value=losses['val'], iteration=iter)
+
+            if losses['val'] < best_val_loss:
+                best_val_loss = losses['val']
+                # Save best model
+                torch.save(model.state_dict(), 'best_model.pt')
+
+        # sample a batch of data
+        xb, yb = get_batch('train')
+
+        # evaluate the loss
+        logits, loss = model(xb, yb)
+        optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        optimizer.step()
+        scheduler.step()
+
+    # ============================================================================
+    # ClearML Logging
+    # ============================================================================
+    if task:
+        task.connect(settings) # Ensure settings are logged as configuration
         
-        # Explicitly log to ClearML
-        if task: 
-            task.get_logger().report_scalar(title='Loss', series='train', value=losses['train'], iteration=iter)
-            task.get_logger().report_scalar(title='Loss', series='val', value=losses['val'], iteration=iter)
+        # Log model parameters
+        n_params = sum(p.numel() for p in model.parameters())
+        print(f"{n_params/1e6:.2f} M parameters")
+        task.set_parameter("model_parameters", n_params)
 
-        if losses['val'] < best_val_loss:
-            best_val_loss = losses['val']
-            # Save best model
-            torch.save(model.state_dict(), 'best_model.pt')
+    # Generate text
+    context = torch.zeros((1, 1), dtype=torch.long, device=settings.device)
+    gen_text = decode(model.generate(context, max_new_tokens=500)[0].tolist())
 
-    # sample a batch of data
-    xb, yb = get_batch('train')
+    print("\nGenerated Text:\n", gen_text)
+    if task:
+        task.get_logger().report_text("Generated Sample", gen_text)
 
-    # evaluate the loss
-    logits, loss = model(xb, yb)
-    optimizer.zero_grad(set_to_none=True)
-    loss.backward()
-    optimizer.step()
+    print(f"\nRun complete. Best Loss: {best_val_loss:.4f}")
 
-# ============================================================================
-# ClearML Logging
-# ============================================================================
-task.connect(settings) # Ensure settings are logged as configuration
+    if task:
+        task.upload_artifact('model', 'best_model.pt')
 
-# Log model parameters
-n_params = sum(p.numel() for p in model.parameters())
-print(f"{n_params/1e6:.2f} M parameters")
-task.set_parameter("model_parameters", n_params)
-
-# Generate text
-context = torch.zeros((1, 1), dtype=torch.long, device=settings.device)
-gen_text = decode(model.generate(context, max_new_tokens=500)[0].tolist())
-
-print("\nGenerated Text:\n", gen_text)
-task.get_logger().report_text("Generated Sample", gen_text)
-
-print(f"\nRun complete. Best Loss: {best_val_loss:.4f}")
-
-if task:
-    task.upload_artifact('model', 'best_model.pt')
+if __name__ == "__main__":
+    if args.profile:
+        print("Profiling enabled...")
+        profiler = cProfile.Profile()
+        profiler.enable()
+        train()
+        profiler.disable()
+        
+        stats = pstats.Stats(profiler).sort_stats('tottime')
+        stats.print_stats(20)
+    else:
+        train()
