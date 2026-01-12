@@ -1,47 +1,48 @@
-# GPT from Scratch
+# GPT Research Lab
 
-A clean, modern reimplementation of a character-level GPT language model in PyTorch. This project is built for educational purposes but uses some modern practices like **GELU activations**, and **Cosine Learning Rate Scheduling**.
+A modular, ground-up implementation of GPT designed for **Architectural Research** and **Optimization Dynamics** study.
 
-Current dataset: **Tiny Shakespeare**.
+Unlike standard "tutorial" repositories, this codebase is structured to facilitate rapid experimentation with new components (e.g., Attention variants, Norms) while providing deep diagnostic visibility into the training process.
 
-## Features
+## 🔬 Research-Grade Diagnostics
+This repository implements advanced metrics to debug training stability beyond just "Loss":
 
-- **Modern Architecture**:
-  - `nn.GELU` activations instead of `ReLU`.
-  - Proper weight initialization (`std=0.02` with residual scaling) for stability.
-- **Reproducible Environment**:
-  - Uses [Pixi](https://pixi.sh) for lockfile-based dependency management.
-- **Training Stability**:
-  - Cosine Annealing Learning Rate Scheduler (`3e-4` max LR).
+- **Update-to-Data (UD) Ratio**: $\frac{\sigma_{\text{update}}}{\sigma_{\text{param}}}$. The "heartbeat" of training. We aim for $\sim 10^{-3}$. If too high, training is unstable; too low, it's inefficient.
+- **Gradient Variance**: $\sigma^2_{\text{grad}}$. distinguishing between "hard samples" and "noisy optimization".
+- **Dead Activation %**: Monitors the health of ReLU/GELU units to detect network capacity collapse.
 
-## Setup & Usage
+## 📂 Project Structure
 
-This project uses **Pixi** to manage dependencies (Python 3.11, PyTorch 2.x).
+The codebase is refactored from a single script into a modular research framework:
 
-1.  **Install Pixi** (if you haven't already):
-    ```bash
-    curl -fsSL https://pixi.sh/install.sh | bash
-    ```
+- **`config.py`**: Centralized, type-safe configuration using `GPTConfig` dataclasses.
+- **`model.py`**: Pure PyTorch implementation of the architecture. Designed for component swappability (e.g., replacing `MultiHeadAttention` with `LinearAttention`).
+- **`train.py`**: The research training loop. Decoupled from the model definition, featuring heavy instrumentation for the diagnostics above.
+- **`utils.py`**: Efficient CSV/JSONL logging for long-running experiments.
 
-2.  **Run the Training**:
-    The environment is automatically handled by Pixi. Just run:
-    ```bash
-    pixi run python main.py --comment "It is compulsory to provide a comment"
-    ```
+## 🚀 Workflow
 
-    This will:
-    - Download dependencies (if needed).
-    - Train the model for 5000 steps.
-    - Save results to `results/run_<timestamp>/`.
+### 1. Configure
+Modify `config.py` or pass CLI arguments to define your experiment.
+```bash
+# Example: Probing the effect of strictly lower learning rates on dead activations
+pixi run python train.py --learning_rate 1e-4 --activation relu
+```
 
-## Codebase Overview
+### 2. Train & Log
+Metrics are streamed to `experiment_metrics.csv` every step.
+```csv
+step, tokens_sec, grad_norm, update_ratio, dead_perc, train_loss
+0,    450.2,      10.5,      0.0012,       0.51,      4.65
+...
+```
 
-- **`main.py`**: The single-file implementation containing the `BigramLanguageModel`, training loop, and data handling.
-- **`pixi.toml`**: Defines project dependencies and environment.
-- **`data/`**: Contains the training dataset (`tinyshakespeare.txt`).
+### 3. Analyze
+Use the CSV logs to generate insight plots. (See `notebooks/` - *coming soon*).
 
 ## Reproducibility
-
-To ensure reproducibility, we set explicit seeds:
-- PyTorch seed: `1337`
-- The `pixi.lock` file ensures exact library versions are used across environments.
+Managed via **Pixi**.
+```bash
+pixi run python train.py
+```
+Global seeds are set for Model initialization and Data sampling to ensure bit-exact reproducibility across runs.
