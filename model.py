@@ -222,3 +222,66 @@ class GPT(nn.Module):
         return idx
 
 # -----------------------------------------------------------------------------
+# EXPERIMENT CLASSES
+# -----------------------------------------------------------------------------
+
+# --- ReLU Experiment ---
+class ReluFeedForward(FeedFoward):
+    def build_activation(self):
+        return nn.ReLU()
+
+class ReluBlock(Block):
+    def build_ffwd(self, config):
+        return ReluFeedForward(config)
+
+class ReluGPT(GPT):
+    def build_block(self, config):
+        return ReluBlock(config)
+
+# --- RMSNorm Experiment ---
+class RmsBlock(Block):
+    def build_norm(self, dim):
+        return RMSNorm(dim)
+
+class RmsGPT(GPT):
+    def build_norm(self, dim):
+        return RMSNorm(dim)
+        
+    def build_block(self, config):
+        return RmsBlock(config)
+
+# --- RoPE Experiment ---
+class RopeGPT(GPT):
+    def __init__(self, config: GPTConfig):
+        super().__init__(config)
+        # Remove absolute position embeddings
+        self.position_embedding_table = None
+        # Add RoPE
+        head_size = config.n_embd // config.n_head
+        self.rope = RotaryPositionalEmbedding(head_size, max_seq_len=config.block_size)
+
+    def forward_embeddings(self, idx, device):
+        # RoPE does not add position embeddings to the input embeddings
+        # It returns rotational embeddings to be applied in attention
+        B, T = idx.shape
+        x = self.token_embedding_table(idx)
+        
+        rot_emb = self.rope(x, seq_len=T)
+        return x, rot_emb
+
+    def forward_blocks(self, x, rot_emb=None):
+        for block in self.blocks:
+            x = block(x, rot_emb=rot_emb)
+        return x
+
+    def forward(self, idx, targets=None):
+        device = idx.device
+        x, rot_emb = self.forward_embeddings(idx, device)
+        x = self.forward_blocks(x, rot_emb=rot_emb)
+        logits, loss = self.forward_head(x, targets)
+        return logits, loss
+
+# --- GELU (Default) ---
+# Since Base GPT uses GELU/LayerNorm, we can just alias it or subclass for naming
+class GeluGPT(GPT):
+    pass

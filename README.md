@@ -1,4 +1,4 @@
-# GPT Research Lab
+# LLM Lab
 
 A modular, ground-up implementation of GPT designed for **Architectural Research** and **Optimization Dynamics** study.
 

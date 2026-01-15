@@ -9,7 +9,7 @@ from torch.nn import functional as F
 from config import GPTConfig
 from utils import ExperimentLogger
 # Import all models
-from model import GPT
+from model import GPT, ReluGPT, RmsGPT, RopeGPT, GeluGPT
 
 # -----------------------------------------------------------------------------
 # Experiment Runner
@@ -249,7 +249,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--comment', type=str, default='', help='Comment for this run')
     parser.add_argument('--resume_from', type=str, default=None, help='Path to experiment directory to resume from')
-    parser.add_argument('--experiment', type=str, default='GPT', help='Name of experiment class to run (GPT)')
+    parser.add_argument('--experiment', type=str, default='ReluGPT', help='Name of experiment class to run (ReluGPT, GeluGPT, RmsGPT)')
     
     # Add Config Args
     for field in GPTConfig.__annotations__:
