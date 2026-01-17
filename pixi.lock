@@ -272,7 +272,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/pillow-12.1.0-py311hf88fc01_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/pixman-0.46.4-h54a6638_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/platformdirs-4.5.1-pyhcf101f3_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/noarch/plotly-6.5.1-pyhd8ed1ab_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/plotly-6.5.2-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/prometheus-cpp-1.3.0-ha5d0236_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/prometheus_client-0.23.1-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/prompt-toolkit-3.0.52-pyha770c72_0.conda
@@ -330,7 +330,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/soupsieve-2.8.1-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/stack_data-0.6.3-pyhd8ed1ab_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/statsmodels-0.14.6-py311h0372a8f_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/noarch/streamlit-1.52.2-pyhd8ed1ab_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/streamlit-1.53.0-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/sympy-1.14.0-pyh2585a3b_105.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/tbb-2022.3.0-h8d10470_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tenacity-9.1.2-pyhd8ed1ab_0.conda
@@ -594,7 +594,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/pillow-12.1.0-py311h17b8079_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/pixman-0.46.4-h5112557_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/platformdirs-4.5.1-pyhcf101f3_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/noarch/plotly-6.5.1-pyhd8ed1ab_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/plotly-6.5.2-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/prometheus_client-0.23.1-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/prompt-toolkit-3.0.52-pyha770c72_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/protobuf-6.31.1-py311heca59f8_2.conda
@@ -649,7 +649,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/soupsieve-2.8.1-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/stack_data-0.6.3-pyhd8ed1ab_1.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/statsmodels-0.14.6-py311h17033d2_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/noarch/streamlit-1.52.2-pyhd8ed1ab_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/streamlit-1.53.0-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/sympy-1.14.0-pyh04b8f61_5.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/tbb-2022.3.0-hd094cb3_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tenacity-9.1.2-pyhd8ed1ab_0.conda
@@ -5839,9 +5839,9 @@ packages:
   license_family: MIT
   size: 23922
   timestamp: 1764950726246
-- conda: https://conda.anaconda.org/conda-forge/noarch/plotly-6.5.1-pyhd8ed1ab_0.conda
-  sha256: 262a532a0107210a7fa6ba63fd3170a804417d1d62ae5b49f9ecd6afc7e63465
-  md5: 0a8b38871cab04059c1cc04853b415a2
+- conda: https://conda.anaconda.org/conda-forge/noarch/plotly-6.5.2-pyhd8ed1ab_0.conda
+  sha256: 48d2caf66b8209bfb3fa160f5bc7cbd625deaa4826e8aa1bad706b2dd22bbb86
+  md5: 7702bcd70891dd0154d765a69e1afa94
   depends:
   - narwhals >=1.15.1
   - packaging
@@ -5850,8 +5850,8 @@ packages:
   - ipywidgets >=7.6
   license: MIT
   license_family: MIT
-  size: 4455861
-  timestamp: 1767830571054
+  size: 4924275
+  timestamp: 1768442503807
 - conda: https://conda.anaconda.org/conda-forge/linux-64/prometheus-cpp-1.3.0-ha5d0236_0.conda
   sha256: 013669433eb447548f21c3c6b16b2ed64356f726b5f77c1b39d5ba17a8a4b8bc
   md5: a83f6a2fdc079e643237887a37460668
@@ -7062,13 +7062,13 @@ packages:
   license_family: BSD
   size: 11662307
   timestamp: 1764983562507
-- conda: https://conda.anaconda.org/conda-forge/noarch/streamlit-1.52.2-pyhd8ed1ab_0.conda
-  sha256: 21b2b3ba03edc058c1d92131d299c9f7ad75e71b9f05123ee676b3bd4d1963dc
-  md5: c03ea11f581a5dcbf08556c598d802d5
+- conda: https://conda.anaconda.org/conda-forge/noarch/streamlit-1.53.0-pyhd8ed1ab_0.conda
+  sha256: 4391de72d894fd3dbc018fac53f3973d90fcdd4e6b11a5b192eca279496d1a8d
+  md5: f15b17c035e6ab40ef43283b50784c01
   depends:
   - altair >=4.0,<7,!=5.4.0,!=5.4.1
   - blinker >=1.5.0,<2
-  - cachetools >=4.0,<7
+  - cachetools >=5.5,<7
   - click >=7.0,<9
   - gitpython >=3.0.7,<4,!=3.1.19
   - numpy >=1.23,<3
@@ -7083,12 +7083,12 @@ packages:
   - tenacity >=8.1.0,<10
   - toml >=0.10.1,<2
   - tornado >=6.0.3,<7,!=6.5.0
-  - typing_extensions >=4.4.0,<5
+  - typing_extensions >=4.10.0,<5
   - watchdog >=2.1.5,<7
   license: Apache-2.0
   license_family: APACHE
-  size: 7482494
-  timestamp: 1766013780153
+  size: 7596482
+  timestamp: 1768492765914
 - conda: https://conda.anaconda.org/conda-forge/noarch/sympy-1.14.0-pyh04b8f61_5.conda
   sha256: 60f18c60f6518254f0d28e4892e94c851cdbd650f7bd49899a6169f76cf6796b
   md5: d814547f1cbcb6f8397ca5686fee8175

@@ -10,10 +10,14 @@ from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.manifold import TSNE
 from sklearn.metrics import confusion_matrix
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import legacy_compat
+
 import yaml
-from config import GPTConfig
-from model import ReasoningGPT
-from utils import load_model_from_checkpoint, create_dataset
+from llm_lab.config import GPTConfig
+from llm_lab.model import ReasoningGPT
+from llm_lab.utils import load_model_from_checkpoint, create_dataset
 
 
 
@@ -189,5 +193,14 @@ if __name__ == "__main__":
     visualize_tsne(acts, labels, args.output_dir, args.layer, test_ds.node_to_id)
     
     # Save results
+    # Save results
+    results_data = {
+        'layer': args.layer,
+        'accuracy': acc,
+        'samples': args.test_chains,
+        'seed': args.seed,
+        'position': args.position,
+        'checkpoint': args.checkpoint
+    }
     with open(os.path.join(args.output_dir, 'results.json'), 'w') as f:
-        json.dump({'layer': args.layer, 'accuracy': acc}, f)
+        json.dump(results_data, f, indent=2)

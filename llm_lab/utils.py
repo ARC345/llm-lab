@@ -4,10 +4,10 @@ import os
 import torch
 import yaml
 from datetime import datetime
-from config import GPTConfig
+from .config import GPTConfig
 # Import all models
-from model import GPT, ReluGPT, RmsGPT, RopeGPT, GeluGPT, ReasoningGPT
-from data.reasoning_dataset import TransitiveReasoningDataset
+from .model import GPT, ReluGPT, RmsGPT, RopeGPT, GeluGPT, ReasoningGPT, ReasoningRopeGPT
+from .data.reasoning_dataset import TransitiveReasoningDataset
 
 def load_model_from_checkpoint(checkpoint_path, device='cpu'):
     """
@@ -55,9 +55,33 @@ def load_model_from_checkpoint(checkpoint_path, device='cpu'):
     # I will modify `train.py` to save the architecture name in the checkpoint in the future.
     # For now, I will add an optional `model_cls` arg to `load_model_from_checkpoint`, defaulting to ReasoningGPT.
     
-    model_cls = ReasoningGPT 
-    
-    # Check if we can infer from config? Not really.
+    # Try to infer model class from checkpoint
+    if 'model_cls' in checkpoint:
+        model_cls_name = checkpoint['model_cls']
+        # We need to find the class object. We can look in globals() or pre-defined map.
+        # Since we imported all models:
+        # from .model import GPT, ReluGPT, RmsGPT, RopeGPT, GeluGPT, ReasoningGPT, ReasoningRopeGPT
+        # We can construct a map.
+        
+        # Mapping available models
+        model_map = {
+            'GPT': GPT,
+            'ReluGPT': ReluGPT,
+            'RmsGPT': RmsGPT,
+            'RopeGPT': RopeGPT,
+            'GeluGPT': GeluGPT,
+            'ReasoningGPT': ReasoningGPT,
+            'ReasoningRopeGPT': ReasoningRopeGPT
+        }
+        
+        if model_cls_name in model_map:
+            model_cls = model_map[model_cls_name]
+        else:
+            print(f"Warning: Unknown model class {model_cls_name} in checkpoint. Defaulting to ReasoningGPT.")
+            model_cls = ReasoningGPT
+    else:
+        # Fallback for legacy checkpoints
+        model_cls = ReasoningGPT 
     
     print(f"Initializing Model: {model_cls.__name__}")
     model = model_cls(config)

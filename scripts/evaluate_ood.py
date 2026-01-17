@@ -3,8 +3,12 @@ import torch
 import argparse
 import os
 import numpy as np
-from utils import load_model_from_checkpoint, create_dataset
-from data.reasoning_dataset import TransitiveReasoningDataset
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import legacy_compat
+
+from llm_lab.utils import load_model_from_checkpoint, create_dataset
+from llm_lab.data.reasoning_dataset import TransitiveReasoningDataset
 
 def evaluate_ood(checkpoint_path, device='cpu', num_chains=1000):
     print(f"Loading model from {checkpoint_path}...")

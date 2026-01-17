@@ -3,7 +3,7 @@ import math
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
-from config import GPTConfig
+from .config import GPTConfig
 
 # -----------------------------------------------------------------------------
 # Primitives
@@ -235,8 +235,8 @@ class ReluFeedForward(FeedFoward):
         return nn.ReLU()
 
 class ReluBlock(Block):
-    def build_ffwd(self, config):
-        return ReluFeedForward(config)
+    def build_ffwd(self, config, embedding_dim=None):
+        return ReluFeedForward(config, embedding_dim=embedding_dim)
 
 class ReluGPT(GPT):
     def build_block(self, config):
@@ -353,3 +353,72 @@ class ReasoningGPT(GPT):
             
         x = self.final_proj(x)
         return x
+
+class ReasoningRopeGPT(ReasoningGPT):
+    """
+    ReasoningGPT with Rotary Positional Embeddings.
+    Inherits from ReasoningGPT to keep bottleneck logic, but overrides forwarding to use RoPE.
+    Handles variable dimensions by maintaining multiple RoPE generators.
+    """
+    def __init__(self, config: GPTConfig):
+        super().__init__(config)
+        # Remove absolute position embeddings
+        self.position_embedding_table = None
+        
+        # Identify all unique head sizes needed
+        dims = set()
+        dims.add(config.n_embd)
+        if config.layer_dims is not None:
+            dims.update(config.layer_dims)
+            
+        self.ropes = nn.ModuleDict()
+        for d in dims:
+            head_size = d // config.n_head
+            self.ropes[str(head_size)] = RotaryPositionalEmbedding(head_size, max_seq_len=config.block_size)
+
+    def forward_embeddings(self, idx, device):
+        # RoPE does not add position embeddings here. 
+        # It's applied in blocks. We return None for rot_emb here to signal dynamic handling or ignore it.
+        B, T = idx.shape
+        x = self.token_embedding_table(idx) # (B,T,C)
+        return x, None
+
+    def forward_blocks(self, x, rot_emb=None):
+        # rot_emb argument is ignored, we resolve it per block based on current dimension
+        
+        B, T, _ = x.shape
+
+        if self.config.layer_dims is None:
+            # Constant dimension, use n_embd rope
+            head_size = self.config.n_embd // self.config.n_head
+            rope = self.ropes[str(head_size)]
+            curr_rot_emb = rope(x, seq_len=T)
+            
+            for block in self.blocks:
+                x = block(x, rot_emb=curr_rot_emb)
+            return x
+
+        for proj, block in zip(self.projections, self.blocks):
+            x = proj(x)
+            # Determine current head size
+            curr_dim = x.shape[-1]
+            head_size = curr_dim // self.config.n_head
+            
+            # Get corresponding RoPE
+            # Note: head_size is int, dict keys are str
+            rope = self.ropes[str(head_size)]
+            curr_rot_emb = rope(x, seq_len=T)
+            
+            x = block(x, rot_emb=curr_rot_emb)
+            
+        x = self.final_proj(x)
+        return x
+
+    def forward(self, idx, targets=None):
+        device = idx.device
+        x, _ = self.forward_embeddings(idx, device)
+        # We handle RoPE internally in forward_blocks
+        x = self.forward_blocks(x, rot_emb=None)
+        logits, loss = self.forward_head(x, targets)
+        return logits, loss
+

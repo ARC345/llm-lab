@@ -7,16 +7,16 @@ import urllib.request
 import yaml
 import torch
 from torch.nn import functional as F
-from config import GPTConfig
-from utils import ExperimentLogger, create_dataset, get_activation_metric_hook
+from llm_lab.config import GPTConfig
+from llm_lab.utils import ExperimentLogger, create_dataset, get_activation_metric_hook
 # Import all models
-from model import GPT, ReluGPT, RmsGPT, RopeGPT, GeluGPT, ReasoningGPT
-from data.reasoning_dataset import TransitiveReasoningDataset
+from llm_lab.model import GPT, ReluGPT, RmsGPT, RopeGPT, GeluGPT, ReasoningGPT, ReasoningRopeGPT
+from llm_lab.data.reasoning_dataset import TransitiveReasoningDataset
 
 # -----------------------------------------------------------------------------
 # Experiment Runner
 # -----------------------------------------------------------------------------
-def run_experiment(experiment_cls, args):
+def run_experiment(experiment_cls, args, parser=None):
     """
     Runs an experiment using the provided experiment_cls (subclass of GPT).
     """
@@ -28,9 +28,15 @@ def run_experiment(experiment_cls, args):
         with open(args.config, 'r') as f:
             yaml_config = yaml.safe_load(f)
         
-        # Override args with yaml_config
+        # Override args with yaml_config ONLY if arg is default
         for k, v in yaml_config.items():
-            setattr(args, k, v)
+            if parser and hasattr(args, k):
+                if getattr(args, k) == parser.get_default(k):
+                    setattr(args, k, v)
+                else:
+                    print(f"Config ignored for {k}: CLI value {getattr(args, k)} overrides config {v}")
+            else:
+                setattr(args, k, v)
             
     # We filter args to matching config fields
     config_dict = {k: v for k, v in vars(args).items() if k in GPTConfig.__annotations__}
@@ -479,13 +485,16 @@ def run_experiment(experiment_cls, args):
     exp_logger.log_metadata({'type': 'generated_text', 'text': gen_text})
 
     # Checkpoint
+    # Checkpoint
     checkpoint = {
-        'model': model.state_dict(),
-        'optimizer': optimizer.state_dict(),
-        'scheduler': scheduler.state_dict(),
-        'iter': iter,
-        'config': config,
-    }
+                    'model': model.state_dict(),
+                    'optimizer': optimizer.state_dict(),
+                    # 'model_args': model_args, # Removed: undefined, config covers this
+                    'iter_num': iter, 
+                    'final_val_loss': losses['val'] if 'losses' in locals() else -1.0,
+                    'config': config,
+                    'model_cls': experiment_cls.__name__,
+                }
     torch.save(checkpoint, os.path.join(out_dir, 'model.pt'))
     print(f"Saved checkpoint to {os.path.join(out_dir, 'model.pt')}")
 
@@ -519,4 +528,4 @@ if __name__ == '__main__':
     else:
         raise ValueError(f"Experiment class {args.experiment} not found in model.py")
         
-    run_experiment(experiment_cls, args)
+    run_experiment(experiment_cls, args, parser)

@@ -3,7 +3,11 @@ import os
 import torch
 import numpy as np
 import argparse
-from utils import load_model_from_checkpoint, create_dataset
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import legacy_compat
+
+from llm_lab.utils import load_model_from_checkpoint, create_dataset
 
 def debug_probe():
     # Load model
@@ -85,7 +89,7 @@ def debug_probe():
     for layer in range(config.n_layer):
         print(f"--- Probing Layer {layer} ---")
         cmd = [
-            "pixi", "run", "python", "probe.py",
+            "pixi", "run", "python", "scripts/probe.py",
             "--checkpoint", checkpoint_path,
             "--layer", str(layer),
             "--output_dir", f"runs/production_v2/probing/layer_{layer}",

@@ -1,0 +1,33 @@
+# Deep RoPE Model Config
+out_dir: 'runs'
+eval_interval: 200
+log_interval: 10
+eval_iters: 100
+eval_only: false
+always_save_checkpoint: true
+init_from: 'scratch'
+
+# Data
+dataset: 'transitive_reasoning'
+gradient_accumulation_steps: 1
+batch_size: 32
+block_size: 128
+
+# Model
+n_layer: 6
+n_head: 4
+n_embd: 64
+dropout: 0.0
+bias: false
+vocab_size: 32
+
+# Optimizer
+learning_rate: 0.001
+max_iters: 10000
+beta1: 0.9
+beta2: 0.99
+weight_decay: 0.1
+decay_lr: true
+lr_decay_iters: 10000
+min_lr: 0.0001
+warmup_iters: 100

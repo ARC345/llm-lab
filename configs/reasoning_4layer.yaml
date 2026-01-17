@@ -1,0 +1,27 @@
+# Reasoning Configuration (4 Layers)
+
+# Data
+dataset_type: 'reasoning'
+num_chains: 400
+test_chains: 100
+batch_size: 32
+block_size: 64
+vocab_size: 32
+
+# Model
+n_layer: 4
+n_head: 4
+n_embd: 256
+dropout: 0.1
+bias: false
+layer_dims: [256, 256, 256, 256] # Flat depth
+
+# Training
+learning_rate: 3.0e-4
+max_iters: 1000
+warmup_iters: 100
+grad_clip: 1.0
+eval_interval: 200
+log_interval: 10
+device: 'cuda'
+seed: 1337

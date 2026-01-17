@@ -14,34 +14,69 @@ st.title("GPT Experiment Dashboard")
 run_dirs = glob.glob("runs/*")
 data = []
 
-for d in run_dirs:
-    run_name = os.path.basename(d)
-    metrics_path = os.path.join(d, "metrics.csv")
-    meta_path = os.path.join(d, "meta.jsonl")
-    
-    if os.path.exists(metrics_path):
-        try:
-            df = pd.read_csv(metrics_path)
-            df['run_name'] = run_name
-            
-            # Load config from meta
-            config = {}
-            if os.path.exists(meta_path):
-                with open(meta_path, 'r') as f:
-                    for line in f:
-                        meta = json.loads(line)
-                        if meta.get('type') == 'config':
-                            # Update config, allowing later overrides (like resumes) to take precedence
-                            # or we can keep initial. Let's just grab the last one.
-                            config.update(meta.get('args', {}))
-                            
-            # Add config params to df (for filtering if we wanted, but mainly for display)
-            for k, v in config.items():
-                df[f"config.{k}"] = v
+if glob.glob("runs/*"):
+    for d in run_dirs:
+        run_name = os.path.basename(d)
+        metrics_path = os.path.join(d, "metrics.csv")
+        meta_path = os.path.join(d, "meta.jsonl")
+        
+        if os.path.exists(metrics_path):
+            try:
+                df = pd.read_csv(metrics_path)
+                df['run_name'] = run_name
                 
-            data.append(df)
-        except Exception as e:
-            st.warning(f"Failed to load {run_name}: {e}")
+                # Load config from meta
+                config = {}
+                if os.path.exists(meta_path):
+                    with open(meta_path, 'r') as f:
+                        for line in f:
+                            meta = json.loads(line)
+                            if meta.get('type') == 'config':
+                                config.update(meta.get('args', {}))
+                                
+                # Add config params to df
+                for k, v in config.items():
+                    if isinstance(v, (list, dict)):
+                        v = str(v)
+                    df[f"config.{k}"] = v
+
+                # Force numeric conversion for metrics
+                numeric_cols = ['train_loss', 'val_loss', 'val_acc', 'ood_acc', 'dead_perc', 'grad_norm', 'act_mean', 'act_std', 'tokens_sec',
+                               'intermediate_error', 'query_error', 'random_error', 'input_node_error']
+                for col in numeric_cols:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+
+                data.append(df)
+
+                # Load Probe Data
+                probe_results = []
+                probing_dir = os.path.join(d, "probing")
+                if os.path.isdir(probing_dir):
+                    layer_dirs = glob.glob(os.path.join(probing_dir, "layer_*"))
+                    for ld in layer_dirs:
+                        try:
+                            res_file = os.path.join(ld, "results.json")
+                            if os.path.exists(res_file):
+                                with open(res_file, 'r') as f:
+                                    res = json.load(f)
+                                    probe_results.append(res)
+                        except:
+                            pass
+                
+                if probe_results:
+                    for pr in probe_results:
+                        pr['run_name'] = run_name
+                    
+                    if 'probe_data_global' not in st.session_state:
+                         st.session_state.probe_data_global = []
+                    
+                    # Simple check: remove existing entries for this run before adding
+                    st.session_state.probe_data_global = [p for p in st.session_state.probe_data_global if p['run_name'] != run_name]
+                    st.session_state.probe_data_global.extend(probe_results)
+
+            except Exception as e:
+                st.warning(f"Failed to load {run_name}: {e}")
 
 if not data:
     st.warning("No experiment data found in 'runs/'.")
@@ -98,7 +133,6 @@ with col3:
 
 with col4:
     st.subheader("Dead Neurons %")
-    # Some experiments might not have this metric
     if 'dead_perc' in filtered_df.columns:
         fig_dead = px.line(
             filtered_df, 
@@ -151,6 +185,86 @@ with col7:
     else:
         st.info("No activation std data found.")
 
+st.markdown("---")
+st.header("Reasoning Metrics")
+
+reasoning_cols = ['val_acc', 'ood_acc']
+error_cols = ['intermediate_error', 'query_error', 'random_error', 'input_node_error']
+
+if any(c in filtered_df.columns for c in reasoning_cols):
+    col_r1, col_r2 = st.columns(2)
+    
+    with col_r1:
+        st.subheader("Reasoning Accuracy")
+        if 'val_acc' in filtered_df.columns:
+             fig_acc = px.line(
+                filtered_df.dropna(subset=['val_acc']), 
+                x='step', y='val_acc', color='run_name',
+                title="2-Hop Test Accuracy"
+            )
+             st.plotly_chart(fig_acc)
+             
+    with col_r2:
+        st.subheader("OOD Generalization")
+        if 'ood_acc' in filtered_df.columns:
+             fig_ood = px.line(
+                filtered_df.dropna(subset=['ood_acc']), 
+                x='step', y='ood_acc', color='run_name',
+                title="3-Hop OOD Accuracy"
+            )
+             st.plotly_chart(fig_ood)
+
+    # Error Analysis
+    if any(c in filtered_df.columns for c in error_cols):
+        st.subheader("Error Analysis (Recent)")
+        latest_metrics = []
+        for run in selected_experiments:
+            run_df = filtered_df[filtered_df['run_name'] == run]
+            # Find last row with valid error metrics
+            valid_err_df = run_df.dropna(subset=error_cols, how='all')
+            
+            if not valid_err_df.empty:
+                last_row = valid_err_df.iloc[-1]
+                for err in error_cols:
+                    if err in last_row:
+                        latest_metrics.append({
+                            'run': run,
+                            'error_type': err,
+                            'value': last_row[err]
+                        })
+        
+        if latest_metrics:
+            err_df = pd.DataFrame(latest_metrics)
+            fig_err = px.bar(
+                err_df, x='run', y='value', color='error_type',
+                title="Error Distribution (Latest Step)",
+                barmode='stack'
+            )
+            st.plotly_chart(fig_err)
+
+st.markdown("---")
+st.header("Internal Representation Analysis (Probing)")
+
+if 'probe_data_global' not in st.session_state:
+    st.session_state.probe_data_global = []
+
+filtered_probe_data = [p for p in st.session_state.probe_data_global if p['run_name'] in selected_experiments]
+
+if filtered_probe_data:
+    probe_df = pd.DataFrame(filtered_probe_data)
+    if 'layer' in probe_df.columns and 'accuracy' in probe_df.columns:
+        probe_df['layer'] = pd.to_numeric(probe_df['layer'])
+        fig_probe = px.line(
+            probe_df.sort_values(by='layer'), 
+            x='layer', y='accuracy', color='run_name',
+            title="Probe Accuracy by Layer (Linear Classification of Intermediate Node)",
+            markers=True,
+            hover_data=['samples', 'checkpoint']
+        )
+        st.plotly_chart(fig_probe)
+else:
+    st.info("No probing results found for selected runs.")
+
 # 4. Summary Table
 st.subheader("Final Metrics Summary")
 summary = []
@@ -159,8 +273,6 @@ for run in selected_experiments:
     if run_df.empty: continue
     
     last_row = run_df.iloc[-1]
-    
-    # Get best val loss
     best_val_loss = run_df['val_loss'].min()
     
     summary.append({
